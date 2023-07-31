@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract TeamWallet {
     event Deposit(address indexed sender, uint amount, uint balance);
@@ -14,6 +15,7 @@ contract TeamWallet {
     event RevokeConfirmation(address indexed owner, uint indexed txIndex);
     event ExecuteTransaction(address indexed owner, uint indexed txIndex);
 
+    IERC20 private USDC;
     address[] public owners;
     mapping(address => bool) public isOwner;
     uint public numConfirmationsRequired;
@@ -51,7 +53,11 @@ contract TeamWallet {
         _;
     }
 
-    constructor(address[] memory _owners, uint _numConfirmationsRequired) {
+    constructor(
+        address[] memory _owners,
+        uint _numConfirmationsRequired,
+        IERC20 _usdc
+    ) {
         require(_owners.length > 0, "owners required");
         require(
             _numConfirmationsRequired > 0 &&
@@ -69,6 +75,7 @@ contract TeamWallet {
             owners.push(owner);
         }
 
+        USDC = _usdc;
         numConfirmationsRequired = _numConfirmationsRequired;
     }
 
@@ -93,6 +100,25 @@ contract TeamWallet {
             })
         );
 
+        emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+    }
+
+    function submitTokenTransaction(
+        address _to,
+        uint _value,
+        bytes memory _data
+    ) public onlyOwner {
+        uint txIndex = transactions.length;
+
+        transactions.push(
+            Transaction({
+                to: _to,
+                value: _value,
+                data: _data,
+                executed: false,
+                numConfirmations: 0
+            })
+        );
         emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
     }
 
@@ -132,6 +158,23 @@ contract TeamWallet {
         emit ExecuteTransaction(msg.sender, _txIndex);
     }
 
+    function executeTokenTransfer(
+        uint _txIndex
+    ) public onlyOwner txExists(_txIndex) notExecuted(_txIndex) {
+        Transaction storage transaction = transactions[_txIndex];
+
+        require(
+            transaction.numConfirmations >= numConfirmationsRequired,
+            "cannot execute tx"
+        );
+
+        transaction.executed = true;
+
+        IERC20(USDC).transfer(transaction.to, transaction.value);
+
+        emit ExecuteTransaction(msg.sender, _txIndex);
+    }
+
     function revokeConfirmation(
         uint _txIndex
     ) public onlyOwner txExists(_txIndex) notExecuted(_txIndex) {
@@ -143,6 +186,10 @@ contract TeamWallet {
         isConfirmed[_txIndex][msg.sender] = false;
 
         emit RevokeConfirmation(msg.sender, _txIndex);
+    }
+
+    function setUsdtAddress(IERC20 _address) public onlyOwner {
+        USDC = _address;
     }
 
     function getOwners() public view returns (address[] memory) {
