@@ -83,6 +83,23 @@ contract TeamWallet {
         emit Deposit(msg.sender, msg.value, address(this).balance);
     }
 
+    function addOwner(address[] memory _owners) public onlyOwner {
+        for (uint i = 0; i < _owners.length; i++) {
+            address owner = _owners[i];
+
+            require(owner != address(0), "invalid owner");
+            require(!isOwner[owner], "owner not unique");
+
+            isOwner[owner] = true;
+            owners.push(owner);
+            numConfirmationsRequired++;
+        }
+    }
+
+    function setERC20(IERC20 _erc20) public onlyOwner {
+        USDC = _erc20;
+    }
+
     function submitTransaction(
         address _to,
         uint _value,
